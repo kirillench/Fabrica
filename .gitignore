@@ -1,0 +1,18 @@
+# Секреты
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node
+node_modules/
+dist/
+
+# Данные рантайма (векторная БД, загруженные файлы, фидбэк)
+backend/data/
+
+# OS
+.DS_Store

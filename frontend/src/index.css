@@ -1,0 +1,284 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  height: 100%;
+  background: #0a0b0d;
+}
+
+body {
+  height: 100%;
+  /* фон обязан быть прозрачным: непрозрачный фон body рисуется ПОВЕРХ
+     элементов с отрицательным z-index и скрыл бы видео-подложку */
+  background: transparent;
+  color: #e8eaee;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ------------------------------------------------------------------ */
+/* Динамичный фон: медленно плывущие размытые «блобы» в серых тонах    */
+/* с едва заметными холодными оттенками                                 */
+/* ------------------------------------------------------------------ */
+
+.bg-scene {
+  position: fixed;
+  inset: 0;
+  z-index: -10;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 120% 80% at 70% -10%, #14161b 0%, transparent 60%),
+    #0a0b0d;
+}
+
+/* Видео-слой: обесцвечен и затемнён под монохромную тему.
+   Лежит поверх блобов — если видео не воспроизвелось, фон не пустой. */
+.bg-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* исходник тёмный со светящимся центром — слегка подсвечиваем */
+  filter: grayscale(0.3) brightness(1.25) contrast(1.06) saturate(0.9);
+  /* запас масштаба под параллакс: JS смещает слой при скролле */
+  transform: scale(1.16);
+  will-change: transform, filter;
+}
+
+/* «Вдох» яркости при появлении гипотез (событие bg-pulse) */
+.bg-video.pulsing {
+  animation: bg-breathe 2.4s ease-in-out;
+}
+
+@keyframes bg-breathe {
+  0% {
+    filter: grayscale(0.3) brightness(1.25) contrast(1.06) saturate(0.9);
+  }
+  30% {
+    filter: grayscale(0.15) brightness(1.85) contrast(1.08) saturate(1.05);
+  }
+  100% {
+    filter: grayscale(0.3) brightness(1.25) contrast(1.06) saturate(0.9);
+  }
+}
+
+/* Пользователям с отключённой анимацией показываем статичные блобы */
+@media (prefers-reduced-motion: reduce) {
+  .bg-video {
+    display: none;
+  }
+  .blob {
+    animation: none;
+  }
+}
+
+/* Вуаль поверх видео: виньетка + градиент, чтобы текст читался,
+   а стеклянные панели сохраняли глубину */
+.bg-veil {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 90% 70% at 50% 30%, transparent 0%, rgba(10, 11, 13, 0.35) 100%),
+    linear-gradient(180deg, rgba(10, 11, 13, 0.25) 0%, rgba(10, 11, 13, 0.08) 40%, rgba(10, 11, 13, 0.4) 100%);
+}
+
+.blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(90px);
+  will-change: transform;
+}
+
+.blob-1 {
+  width: 46vw;
+  height: 46vw;
+  left: -12vw;
+  top: -16vh;
+  background: radial-gradient(circle, rgba(84, 92, 110, 0.32), transparent 70%);
+  animation: drift-1 26s ease-in-out infinite alternate;
+}
+
+.blob-2 {
+  width: 38vw;
+  height: 38vw;
+  right: -10vw;
+  top: 22vh;
+  background: radial-gradient(circle, rgba(64, 70, 82, 0.38), transparent 70%);
+  animation: drift-2 32s ease-in-out infinite alternate;
+}
+
+.blob-3 {
+  width: 42vw;
+  height: 42vw;
+  left: 28vw;
+  bottom: -24vh;
+  background: radial-gradient(circle, rgba(74, 82, 98, 0.26), transparent 70%);
+  animation: drift-3 38s ease-in-out infinite alternate;
+}
+
+.blob-4 {
+  width: 24vw;
+  height: 24vw;
+  left: 12vw;
+  top: 48vh;
+  background: radial-gradient(circle, rgba(96, 104, 122, 0.18), transparent 70%);
+  animation: drift-2 22s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes drift-1 {
+  from { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(9vw, 7vh) scale(1.12); }
+  to   { transform: translate(3vw, 13vh) scale(0.94); }
+}
+
+@keyframes drift-2 {
+  from { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(-8vw, 5vh) scale(1.08); }
+  to   { transform: translate(-3vw, -9vh) scale(0.96); }
+}
+
+@keyframes drift-3 {
+  from { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(6vw, -8vh) scale(1.1); }
+  to   { transform: translate(-7vw, -3vh) scale(1.02); }
+}
+
+/* Едва заметная зернистость поверх фона, гасит полосатость градиентов */
+.bg-noise {
+  position: fixed;
+  inset: 0;
+  z-index: -9;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ------------------------------------------------------------------ */
+/* Liquid glass: полупрозрачные панели с blur, бликом и тонкой рамкой  */
+/* ------------------------------------------------------------------ */
+
+.glass {
+  /* тонированное тёмное стекло: видео просвечивает размытым,
+     но текст остаётся контрастным даже над яркими участками */
+  background: rgba(12, 13, 16, 0.52);
+  backdrop-filter: blur(26px) saturate(115%);
+  -webkit-backdrop-filter: blur(26px) saturate(115%);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 10px 36px rgba(0, 0, 0, 0.4);
+  border-radius: 1.25rem;
+}
+
+.glass-soft {
+  background: rgba(12, 13, 16, 0.38);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 1rem;
+}
+
+.glass-hover {
+  transition: background 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
+}
+
+.glass-hover:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.13);
+}
+
+.glass-input {
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.85rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.glass-input:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.24);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05);
+}
+
+.btn-primary {
+  background: rgba(232, 234, 238, 0.92);
+  color: #101216;
+  border-radius: 0.85rem;
+  font-weight: 600;
+  transition: background 0.2s ease, transform 0.15s ease, opacity 0.2s ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #ffffff;
+  transform: translateY(-1px);
+}
+
+.btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 0.7rem;
+  transition: background 0.2s ease;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Кастомные слайдеры весов */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #e8eaee;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+}
+
+/* Появление карточек результатов */
+.fade-up {
+  animation: fadeUp 0.5s ease both;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
