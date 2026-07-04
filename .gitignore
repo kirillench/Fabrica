@@ -16,3 +16,6 @@ backend/data/
 
 # OS
 .DS_Store
+
+# Служебные файлы IDE/инструментов
+.claude/

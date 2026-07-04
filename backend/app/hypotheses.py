@@ -158,7 +158,16 @@ def generate(
     matcher = domains_mod.get_matcher(domain["id"])
     query = context_query or f"{req.goal} {req.constraints}"
     is_relevant = _relevance_checker(query, matcher)
-    retrieved = [r for r in retrieved if is_relevant(r["text"])]
+    filtered = [r for r in retrieved if is_relevant(r["text"])]
+    if matcher(query):
+        # запрос сформулирован в терминах домена: фильтр уточняет выдачу,
+        # но не блокирует запрос (лексика базы может отличаться, например
+        # из-за анонимизации). Финальную обоснованность гарантирует
+        # обязательное цитирование [S#] и отбрасывание гипотез без источников.
+        retrieved = filtered or retrieved
+    else:
+        # вне доменной терминологии — жёсткая отсечка (защита от офф-топика)
+        retrieved = filtered
     if not retrieved:
         raise NoKnowledgeError(
             "В базе знаний нет фрагментов, релевантных этой задаче. Загрузите "

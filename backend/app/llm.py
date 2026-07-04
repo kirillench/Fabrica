@@ -11,7 +11,13 @@ _RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 
 
 def _client() -> OpenAI:
-    return OpenAI(api_key=settings.llm_api_key, base_url=settings.llm_base_url)
+    # явный таймаут: зависшая модель быстрее уступает место запасной
+    return OpenAI(
+        api_key=settings.llm_api_key,
+        base_url=settings.llm_base_url,
+        timeout=180.0,
+        max_retries=1,
+    )
 
 
 def _models_chain() -> list[str]:
