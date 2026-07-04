@@ -1,5 +1,6 @@
 import { RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { getGraph, openDocument } from '../api.js'
 
 const TYPE_COLORS = {
   material: '#d7dbe2',
@@ -92,9 +93,9 @@ export default function KnowledgeGraph({ docs }) {
 
   const load = () => {
     setLoading(true)
-    fetch('/api/graph?max_nodes=90')
-      .then((r) => r.json())
+    getGraph(90)
       .then(setData)
+      .catch(() => {})
       .finally(() => setLoading(false))
   }
 
@@ -247,14 +248,13 @@ export default function KnowledgeGraph({ docs }) {
               {selected.docs.map((d, i) => (
                 <span key={d}>
                   {i > 0 && ', '}
-                  <a
-                    href={`/api/documents/${d}/file`}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => openDocument(d)}
                     className="text-base-300 underline decoration-white/20 hover:text-base-100"
                   >
                     {docName(d)}
-                  </a>
+                  </button>
                 </span>
               ))}
             </p>

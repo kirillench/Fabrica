@@ -1,5 +1,6 @@
 import { FileText, Loader2, Trash2, Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
+import { openDocument } from '../api.js'
 
 /**
  * База знаний: загрузка и список документов.
@@ -78,15 +79,14 @@ export default function Sidebar({ docs, onUpload, onDelete, uploading, wide = fa
           >
             <FileText size={16} className="shrink-0 text-base-400" />
             <div className="min-w-0 flex-1">
-              <a
-                href={`/api/documents/${d.id}/file`}
-                target="_blank"
-                rel="noreferrer"
-                className="block truncate text-sm text-base-100 hover:underline"
+              <button
+                type="button"
+                onClick={() => openDocument(d.id)}
+                className="block w-full truncate text-left text-sm text-base-100 hover:underline"
                 title={d.filename}
               >
                 {d.filename}
-              </a>
+              </button>
               <p className="text-xs text-base-400">{d.chunks} фрагм.</p>
             </div>
             <button

@@ -3,7 +3,7 @@ import {
   ThumbsDown, ThumbsUp,
 } from 'lucide-react'
 import { memo, useState } from 'react'
-import { exportReport } from '../api.js'
+import { exportReport, openDocument } from '../api.js'
 import MiniGraph from './MiniGraph.jsx'
 import RoadmapEditor from './RoadmapEditor.jsx'
 
@@ -61,16 +61,15 @@ function RationaleText({ text, sources }) {
         const src = m && byId[m[1]]
         if (src) {
           return (
-            <a
+            <button
               key={i}
-              href={`/api/documents/${src.doc_id}/file`}
-              target="_blank"
-              rel="noreferrer"
+              type="button"
+              onClick={() => openDocument(src.doc_id)}
               title={src.filename}
-              className="mx-0.5 rounded bg-white/10 px-1 py-0.5 text-xs text-base-100 no-underline transition hover:bg-white/20"
+              className="mx-0.5 rounded bg-white/10 px-1 py-0.5 text-xs text-base-100 transition hover:bg-white/20"
             >
               {m[1]}
-            </a>
+            </button>
           )
         }
         return <span key={i}>{part}</span>
@@ -146,15 +145,14 @@ function HypothesisCard({ rank, hypothesis: h, goal, onFeedback, onRoadmapChange
             <div className="mt-3 space-y-1.5">
               {h.sources.map((s) => (
                 <div key={s.id} className="glass-soft px-3 py-2 text-xs">
-                  <a
-                    href={`/api/documents/${s.doc_id}/file`}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => openDocument(s.doc_id)}
                     className="inline-flex items-center gap-1.5 font-medium text-base-200 underline decoration-white/20 underline-offset-2 transition hover:text-base-100"
                   >
                     [{s.id}] {s.filename}
                     <ExternalLink size={11} className="text-base-400" />
-                  </a>
+                  </button>
                   {typeof s.relevance === 'number' && (
                     <span className="ml-2 text-base-400">
                       релевантность {(s.relevance * 100).toFixed(0)}%

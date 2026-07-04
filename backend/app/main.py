@@ -3,7 +3,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
@@ -12,6 +12,7 @@ from . import export as export_mod
 from . import extraction, graph, hypotheses as hyp, ingest, rag
 from . import sessions as sessions_mod
 from .config import FEEDBACK_FILE, UPLOADS_DIR, settings
+from .security import current_user, make_document_link, verify_document_link
 from .schemas import (
     ExportRequest,
     FeedbackRequest,
@@ -33,16 +34,24 @@ app.add_middleware(
 
 @app.get("/api/health")
 def health():
+    # единственный открытый эндпоинт: фронтенду нужно знать до входа,
+    # требуется ли токен
     return {
         "status": "ok",
         "demo_mode": settings.is_demo,
         "model": settings.llm_model if not settings.is_demo else None,
         "graph_backend": graph.store.backend,
+        "auth": settings.auth_enabled,
     }
 
 
+@app.get("/api/me")
+def me(user: str = Depends(current_user)):
+    return {"user": user}
+
+
 @app.get("/api/domains")
-def list_domains():
+def list_domains(user: str = Depends(current_user)):
     return {"domains": domains_mod.list_domains()}
 
 
@@ -50,6 +59,7 @@ def list_domains():
 async def upload_documents(
     files: list[UploadFile] = File(...),
     domain: str = Form("mineral_processing"),
+    user: str = Depends(current_user),
 ):
     domain_pack = domains_mod.get(domain)
     results = []
@@ -78,13 +88,25 @@ async def upload_documents(
 
 
 @app.get("/api/documents")
-def list_documents():
+def list_documents(user: str = Depends(current_user)):
     return {"documents": rag.list_documents()}
 
 
+@app.get("/api/documents/{doc_id}/link")
+def get_document_link(doc_id: str, user: str = Depends(current_user)):
+    """Выдаёт короткоживущую подписанную ссылку на исходный файл."""
+    return {"url": make_document_link(doc_id)}
+
+
 @app.get("/api/documents/{doc_id}/file")
-def get_document_file(doc_id: str):
-    """Отдаёт исходный файл — цитаты в карточках гипотез ссылаются сюда."""
+def get_document_file(doc_id: str, exp: int = 0, sig: str = ""):
+    """Отдаёт исходный файл по подписанной ссылке (см. /link).
+
+    Заголовок Authorization в <a href> не передать, поэтому доступ
+    проверяется HMAC-подписью с ограниченным сроком жизни.
+    """
+    if settings.auth_enabled and not verify_document_link(doc_id, exp, sig):
+        raise HTTPException(403, "Ссылка недействительна или истекла")
     matches = list(UPLOADS_DIR.glob(f"{doc_id}_*"))
     if not matches:
         raise HTTPException(404, "Файл не найден")
@@ -98,7 +120,7 @@ def get_document_file(doc_id: str):
 
 
 @app.delete("/api/documents/{doc_id}")
-def delete_document(doc_id: str):
+def delete_document(doc_id: str, user: str = Depends(current_user)):
     rag.delete_document(doc_id)
     graph.store.remove_document(doc_id)
     for p in UPLOADS_DIR.glob(f"{doc_id}_*"):
@@ -107,19 +129,19 @@ def delete_document(doc_id: str):
 
 
 @app.get("/api/graph")
-def get_graph(max_nodes: int = 120):
+def get_graph(max_nodes: int = 120, user: str = Depends(current_user)):
     return graph.store.snapshot(max_nodes=max_nodes)
 
 
 @app.post("/api/generate")
-def generate(req: GenerateRequest):
+def generate(req: GenerateRequest, user: str = Depends(current_user)):
     if not req.goal.strip():
         raise HTTPException(400, "Укажите целевую проблему")
     # в треде уточняющие запросы наследуют контекст предыдущих ходов:
     # «без замены оборудования» само по себе не содержит доменных терминов
     prior_goals: list[str] = []
     if req.session_id:
-        session = sessions_mod.get(req.session_id)
+        session = sessions_mod.get(req.session_id, owner=user)
         if session:
             prior_goals = [t["request"]["goal"] for t in session["turns"][-2:]]
     query = "\n".join([*prior_goals, req.goal, req.constraints]).strip()
@@ -141,6 +163,7 @@ def generate(req: GenerateRequest):
             "weights": req.weights,
         },
         hypotheses,
+        owner=user,
     )
     return {
         "hypotheses": hypotheses,
@@ -157,40 +180,45 @@ def generate(req: GenerateRequest):
 
 
 @app.get("/api/sessions")
-def list_sessions():
-    return {"sessions": sessions_mod.list_sessions()}
+def list_sessions(user: str = Depends(current_user)):
+    return {"sessions": sessions_mod.list_sessions(owner=user)}
 
 
 @app.post("/api/sessions")
-def create_session(req: SessionCreate):
-    return sessions_mod.create(req.title)
+def create_session(req: SessionCreate, user: str = Depends(current_user)):
+    return sessions_mod.create(req.title, owner=user)
 
 
 @app.get("/api/sessions/{session_id}")
-def get_session(session_id: str):
-    session = sessions_mod.get(session_id)
+def get_session(session_id: str, user: str = Depends(current_user)):
+    session = sessions_mod.get(session_id, owner=user)
     if session is None:
         raise HTTPException(404, "Сессия не найдена")
     return session
 
 
 @app.patch("/api/sessions/{session_id}")
-def rename_session(session_id: str, req: SessionRename):
-    if not sessions_mod.rename(session_id, req.title):
+def rename_session(session_id: str, req: SessionRename, user: str = Depends(current_user)):
+    if not sessions_mod.rename(session_id, req.title, owner=user):
         raise HTTPException(404, "Сессия не найдена")
     return {"ok": True}
 
 
 @app.delete("/api/sessions/{session_id}")
-def delete_session(session_id: str):
-    sessions_mod.delete(session_id)
+def delete_session(session_id: str, user: str = Depends(current_user)):
+    sessions_mod.delete(session_id, owner=user)
     return {"ok": True}
 
 
 @app.patch("/api/sessions/{session_id}/hypotheses/{hypothesis_id}")
-def update_hypothesis(session_id: str, hypothesis_id: str, req: HypothesisUpdate):
+def update_hypothesis(
+    session_id: str,
+    hypothesis_id: str,
+    req: HypothesisUpdate,
+    user: str = Depends(current_user),
+):
     ok = sessions_mod.patch_hypothesis(
-        session_id, hypothesis_id, req.model_dump(exclude_none=True)
+        session_id, hypothesis_id, req.model_dump(exclude_none=True), owner=user
     )
     if not ok:
         raise HTTPException(404, "Гипотеза не найдена в сессии")
@@ -198,7 +226,7 @@ def update_hypothesis(session_id: str, hypothesis_id: str, req: HypothesisUpdate
 
 
 @app.post("/api/feedback")
-def feedback(req: FeedbackRequest):
+def feedback(req: FeedbackRequest, user: str = Depends(current_user)):
     entries = []
     if FEEDBACK_FILE.exists():
         entries = json.loads(FEEDBACK_FILE.read_text(encoding="utf-8"))
@@ -228,7 +256,7 @@ _EXPORTERS = {
 
 
 @app.post("/api/export")
-def export(req: ExportRequest):
+def export(req: ExportRequest, user: str = Depends(current_user)):
     if req.format not in _EXPORTERS:
         raise HTTPException(400, f"Неизвестный формат: {req.format}")
     fn, media_type = _EXPORTERS[req.format]

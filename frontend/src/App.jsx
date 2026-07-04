@@ -1,6 +1,7 @@
-import { AlertTriangle, Database, FlaskConical, Network, Sparkles } from 'lucide-react'
+import { AlertTriangle, Database, FlaskConical, LogOut, Network, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from './api.js'
+import AuthGate from './components/AuthGate.jsx'
 import Background from './components/Background.jsx'
 import ChatTurn from './components/ChatTurn.jsx'
 import GeneratorForm from './components/GeneratorForm.jsx'
@@ -10,6 +11,8 @@ import Sidebar from './components/Sidebar.jsx'
 
 export default function App() {
   const [tab, setTab] = useState('generate') // generate | knowledge | graph
+  const [auth, setAuth] = useState('loading') // loading | gate | ok
+  const [user, setUser] = useState('')
   const [docs, setDocs] = useState([])
   const [domains, setDomains] = useState([])
   const [domain, setDomain] = useState('mineral_processing')
@@ -32,11 +35,42 @@ export default function App() {
       return r.sessions
     })
 
+  // 1. Определяем режим доступа; 401 в любой момент возвращает на экран входа
   useEffect(() => {
+    api.getHealth()
+      .then((h) => {
+        setHealth(h)
+        if (!h.auth) {
+          setAuth('ok')
+        } else if (!api.hasToken()) {
+          setAuth('gate')
+        } else {
+          // токен сохранён с прошлого раза — проверяем его
+          api.getMe()
+            .then((me) => {
+              setUser(me.user)
+              setAuth('ok')
+            })
+            .catch(() => {}) // 401 обработает auth-required
+        }
+      })
+      .catch(() => setError('Бэкенд недоступен — запустите uvicorn (см. README)'))
+
+    const onAuthRequired = () => {
+      api.clearToken()
+      setSessions([])
+      setActiveSession(null)
+      setDocs([])
+      setAuth('gate')
+    }
+    window.addEventListener('auth-required', onAuthRequired)
+    return () => window.removeEventListener('auth-required', onAuthRequired)
+  }, [])
+
+  // 2. Данные загружаются только после входа
+  useEffect(() => {
+    if (auth !== 'ok') return
     refreshDocs()
-    api.getHealth().then(setHealth).catch(() =>
-      setError('Бэкенд недоступен — запустите uvicorn (см. README)'),
-    )
     api.listDomains().then((r) => {
       setDomains(r.domains)
       if (r.domains.length && !r.domains.some((d) => d.id === 'mineral_processing')) {
@@ -47,9 +81,19 @@ export default function App() {
     refreshSessions()
       .then((list) => {
         if (list.length) return api.getSession(list[0].id).then(setActiveSession)
+        setActiveSession(null)
       })
       .catch(() => {})
-  }, [])
+  }, [auth])
+
+  const handleLogout = () => {
+    api.clearToken()
+    setUser('')
+    setSessions([])
+    setActiveSession(null)
+    setDocs([])
+    setAuth('gate')
+  }
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -179,6 +223,28 @@ export default function App() {
 
   const domainName = (id) => domains.find((d) => d.id === id)?.name
 
+  if (auth === 'gate') {
+    return (
+      <div className="min-h-screen">
+        <Background />
+        <AuthGate
+          onSuccess={(name) => {
+            setUser(name)
+            setAuth('ok')
+          }}
+        />
+      </div>
+    )
+  }
+
+  if (auth === 'loading') {
+    return (
+      <div className="min-h-screen">
+        <Background />
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen">
       <Background />
@@ -254,6 +320,14 @@ export default function App() {
             {health && !health.demo_mode && (
               <span className="glass-soft px-3 py-1.5 text-xs text-base-300">
                 {health.model}
+              </span>
+            )}
+            {health?.auth && user && (
+              <span className="glass-soft flex items-center gap-2 px-3 py-1.5 text-xs text-base-200">
+                {user}
+                <button onClick={handleLogout} title="Выйти">
+                  <LogOut size={12} className="text-base-400 hover:text-base-200" />
+                </button>
               </span>
             )}
           </div>

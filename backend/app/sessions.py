@@ -32,9 +32,13 @@ def _save(sessions: list[dict]) -> None:
     )
 
 
-def list_sessions() -> list[dict]:
-    """Сводки для панели: без тяжёлого содержимого тредов."""
-    sessions = _load()
+def _owned(session: dict, owner: str) -> bool:
+    return session.get("owner", "default") == owner
+
+
+def list_sessions(owner: str = "default") -> list[dict]:
+    """Сводки для панели: только сессии владельца, без содержимого тредов."""
+    sessions = [s for s in _load() if _owned(s, owner)]
     sessions.sort(key=lambda s: s["updated_at"], reverse=True)
     return [
         {
@@ -49,16 +53,18 @@ def list_sessions() -> list[dict]:
     ]
 
 
-def get(session_id: str) -> dict | None:
-    return next((s for s in _load() if s["id"] == session_id), None)
+def get(session_id: str, owner: str = "default") -> dict | None:
+    s = next((s for s in _load() if s["id"] == session_id), None)
+    return s if s and _owned(s, owner) else None
 
 
-def create(title: str = "Новая сессия") -> dict:
+def create(title: str = "Новая сессия", owner: str = "default") -> dict:
     with _lock:
         sessions = _load()
         session = {
             "id": uuid.uuid4().hex[:10],
             "title": title,
+            "owner": owner,
             "created_at": _now(),
             "updated_at": _now(),
             "turns": [],
@@ -68,11 +74,11 @@ def create(title: str = "Новая сессия") -> dict:
     return session
 
 
-def rename(session_id: str, title: str) -> bool:
+def rename(session_id: str, title: str, owner: str = "default") -> bool:
     with _lock:
         sessions = _load()
         for s in sessions:
-            if s["id"] == session_id:
+            if s["id"] == session_id and _owned(s, owner):
                 s["title"] = title.strip() or s["title"]
                 s["updated_at"] = _now()
                 _save(sessions)
@@ -80,25 +86,36 @@ def rename(session_id: str, title: str) -> bool:
     return False
 
 
-def delete(session_id: str) -> None:
+def delete(session_id: str, owner: str = "default") -> None:
     with _lock:
-        _save([s for s in _load() if s["id"] != session_id])
+        _save([
+            s for s in _load()
+            if s["id"] != session_id or not _owned(s, owner)
+        ])
 
 
 def add_turn(
-    session_id: str | None, request: dict, hypotheses: list[dict]
+    session_id: str | None,
+    request: dict,
+    hypotheses: list[dict],
+    owner: str = "default",
 ) -> tuple[dict, dict]:
-    """Добавляет ход в сессию; без session_id создаёт новую.
+    """Добавляет ход в сессию владельца; без session_id (или при попытке
+    писать в чужую сессию) создаёт новую.
 
     Возвращает (session, turn). Первый ход задаёт название сессии.
     """
     with _lock:
         sessions = _load()
-        session = next((s for s in sessions if s["id"] == session_id), None)
+        session = next(
+            (s for s in sessions if s["id"] == session_id and _owned(s, owner)),
+            None,
+        )
         if session is None:
             session = {
                 "id": uuid.uuid4().hex[:10],
                 "title": "Новая сессия",
+                "owner": owner,
                 "created_at": _now(),
                 "updated_at": _now(),
                 "turns": [],
@@ -118,7 +135,9 @@ def add_turn(
     return session, turn
 
 
-def patch_hypothesis(session_id: str, hypothesis_id: str, fields: dict) -> bool:
+def patch_hypothesis(
+    session_id: str, hypothesis_id: str, fields: dict, owner: str = "default"
+) -> bool:
     """Персистит правки гипотезы (дорожная карта, вердикт эксперта)."""
     allowed = {"roadmap", "verdict"}
     updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
@@ -127,7 +146,7 @@ def patch_hypothesis(session_id: str, hypothesis_id: str, fields: dict) -> bool:
     with _lock:
         sessions = _load()
         for s in sessions:
-            if s["id"] != session_id:
+            if s["id"] != session_id or not _owned(s, owner):
                 continue
             for t in s["turns"]:
                 for h in t["hypotheses"]:

@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
@@ -24,6 +25,33 @@ class Settings(BaseSettings):
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
     neo4j_password: str = "hypothesis-factory"
+
+    # Аутентификация: «токен:Имя,токен2:Имя2»; пусто — выключена
+    app_tokens: str = ""
+    # Секрет подписи ссылок на документы; пусто — выводится из APP_TOKENS
+    app_secret: str = ""
+
+    @property
+    def token_users(self) -> dict[str, str]:
+        users: dict[str, str] = {}
+        for pair in self.app_tokens.split(","):
+            pair = pair.strip()
+            if not pair:
+                continue
+            token, _, name = pair.partition(":")
+            if token.strip():
+                users[token.strip()] = name.strip() or f"user-{token.strip()[:6]}"
+        return users
+
+    @property
+    def auth_enabled(self) -> bool:
+        return bool(self.token_users)
+
+    @property
+    def signing_secret(self) -> str:
+        if self.app_secret:
+            return self.app_secret
+        return hashlib.sha256(f"doc-links:{self.app_tokens}".encode()).hexdigest()
 
     model_config = {"env_file": str(ROOT / ".env"), "extra": "ignore"}
 
