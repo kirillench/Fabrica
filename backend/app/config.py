@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
+    llm_fallback_models: str = ""  # запасные модели через запятую (фолбэк при 429/5xx)
     llm_temperature: float = 0.4
     demo_mode: str = "auto"  # auto | on | off
 
