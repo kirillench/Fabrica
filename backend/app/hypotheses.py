@@ -126,22 +126,21 @@ def _relevance_checker(query: str, matcher):
 
     Мультиязычные эмбеддинги по умолчанию слабо разделяют русские тексты,
     поэтому числовой порог косинусной близости ненадёжен. Вместо него —
-    прозрачное правило: чанк релевантен, если делит с запросом хотя бы одну
-    доменную сущность ИЛИ не меньше двух лексических основ (первые 5 букв
-    слов длиной 5+).
+    прозрачные признаки пересечения запроса с чанком: общие доменные
+    сущности и общие лексические основы (первые 5 букв слов длиной 5+).
 
-    Анализ запроса выполняется один раз, возвращается функция для чанков.
+    Анализ запроса выполняется один раз; возвращает (сущности запроса,
+    функция чанк -> (есть_общая_сущность, число_общих_основ)).
     """
     q_entities = {n for n, _ in matcher(query)}
     q_stems = {w[:5] for w in _WORD_RE.findall(query.lower())}
 
-    def check(chunk_text: str) -> bool:
-        if q_entities and q_entities & {n for n, _ in matcher(chunk_text)}:
-            return True
+    def evidence(chunk_text: str) -> tuple[bool, int]:
+        ent = bool(q_entities and q_entities & {n for n, _ in matcher(chunk_text)})
         c_stems = {w[:5] for w in _WORD_RE.findall(chunk_text.lower())}
-        return len(q_stems & c_stems) >= 2
+        return ent, len(q_stems & c_stems)
 
-    return check
+    return q_entities, evidence
 
 
 def generate(
@@ -157,17 +156,20 @@ def generate(
     # context_query включает предыдущие ходы сессии для уточняющих запросов.
     matcher = domains_mod.get_matcher(domain["id"])
     query = context_query or f"{req.goal} {req.constraints}"
-    is_relevant = _relevance_checker(query, matcher)
-    filtered = [r for r in retrieved if is_relevant(r["text"])]
-    if matcher(query):
-        # запрос сформулирован в терминах домена: фильтр уточняет выдачу,
-        # но не блокирует запрос (лексика базы может отличаться, например
-        # из-за анонимизации). Финальную обоснованность гарантирует
-        # обязательное цитирование [S#] и отбрасывание гипотез без источников.
-        retrieved = filtered or retrieved
+    q_entities, evidence = _relevance_checker(query, matcher)
+    scored = [(r, *evidence(r["text"])) for r in retrieved]
+    strong = [r for r, ent, stems in scored if ent or stems >= 2]
+    weak = [r for r, ent, stems in scored if ent or stems >= 1]
+    if q_entities:
+        # запрос в терминах домена: фильтр уточняет выдачу, но не блокирует
+        # (лексика базы может отличаться, например из-за анонимизации)
+        retrieved = strong or retrieved
     else:
-        # вне доменной терминологии — жёсткая отсечка (защита от офф-топика)
-        retrieved = filtered
+        # запрос бытовым языком: достаточно хотя бы одной общей основы
+        # с базой; жёсткий отказ — только при нулевом пересечении (офф-топик).
+        # Финальную обоснованность гарантирует обязательное цитирование [S#]
+        # и отбрасывание гипотез без источников.
+        retrieved = strong or weak
     if not retrieved:
         raise NoKnowledgeError(
             "В базе знаний нет фрагментов, релевантных этой задаче. Загрузите "
